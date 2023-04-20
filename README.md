@@ -1,5 +1,5 @@
 # Supervised learning in RKHM
-Code for "Learning in RKHM: a C*-Algebraic Twist for Kernel Machine"
+Code for "[Learning in RKHM: a C*-Algebraic Twist for Kernel Machine](https://proceedings.mlr.press/v206/hashimoto23a.html)" by Yuka Hashimoto, Masahiro Ikeda, and Hachem Kadri
 
 ## Setup
 
