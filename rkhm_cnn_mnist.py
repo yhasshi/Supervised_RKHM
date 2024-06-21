@@ -8,6 +8,7 @@ import scipy.linalg as salg
 import tensorflow as tf
 from tensorflow.keras import layers, losses, models
 from tensorflow.keras.models import Model
+from tensorflow.keras.initializers import TruncatedNormal, Constant
 import numpy as np
 import math
 import copy
@@ -19,17 +20,17 @@ import os
 n=20 # number of training samples
 phalf=28 # number of pixels in each column or each row
 p=phalf*phalf # number of pixels (phalf x phalf)
-lam=10 # regularization parameter for learning in RKHM
+lam=0.8 # regularization parameter for learning in RKHM
 qq=2 # number of layers in RKHM
 b=0.1 # parameter in RKHM
-epochs=1000 # maximum number of epochs for learning CNN
+epochs=3000 # maximum number of epochs for learning CNN
 
 # 1-layer 3 x 3 CNN
 class CNN(Model):
   def __init__(self,dim):
     super(CNN, self).__init__()    
     self.model = models.Sequential()
-    self.model.add(layers.Conv2D(1, (3, 3), activation='relu', padding="same"))
+    self.model.add(layers.Conv2D(1, (3, 3), activation='relu', padding="same"))#,kernel_initializer=TruncatedNormal(mean=0.0, stddev=0.01)))
   
   def call(self, x):
     output = self.model(x)
@@ -60,12 +61,14 @@ def opti(aa,xmat,ymat,opt):
                 tmpp=tf.matmul(aa[2],tf.transpose(r,(1,0)))
                 tmp=tf.matmul(tmpp,tf.eye(p)-b*tf.transpose(q,(1,0)))+aa[3]
                 tmp1=tf.matmul(tmpp,tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.eye(p)-b*tf.transpose(q,(1,0)))))
+                #tmp1=tf.matmul(tmpp,tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.eye(p)-b*tf.transpose(q,(1,0))))))))#tf.matmul(tmpp,tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.eye(p)-b*tf.transpose(q,(1,0)))))
                 xmat1=tf.concat([tmp,tmp1],axis=1)
                 
             else:
                 tmpp=tf.matmul(aa[2],tf.transpose(r,(1,0)))
                 tmp=tf.matmul(tmpp,tf.eye(p)-b*tf.transpose(q,(1,0)))+aa[3]
                 tmp1=tf.matmul(tmpp,tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.eye(p)-b*tf.transpose(q,(1,0)))))
+                #tmp1=tf.matmul(tmpp,tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.eye(p)-b*tf.transpose(q,(1,0))))))))
                 xmat1=tf.concat([xmat1,tf.concat([tmp,tmp1],axis=1)],axis=0)
 
         G1=tf.matmul(xmat1,tf.transpose(xmat1,(1,0)))
@@ -118,12 +121,12 @@ def run_rkhm_cnn():
     a3=tf.Variable(aa2,dtype=tf.float32)
     aa=[a,a1,a2,a3]
     
-    opt=tf.keras.optimizers.Adam(1e-4)
+    opt=tf.keras.optimizers.Adam(1*1e-4)
 
-    for kk in range(20):
+    for kk in range(10):
         loss,xmat11,cc=opti(aa,xmatt,ymatt,opt)
         
-        if kk==19:
+        if kk==9:
             xmat1=xmat11.numpy()
             c=cc.numpy()
             xtest1=np.zeros((100*p,qq*p))
@@ -147,8 +150,7 @@ def run_rkhm_cnn():
                 result[ind[0]]=np.zeros(len(ind[0]))
                 result=result/np.max(result)
                 xmat[i,:,:,0]=result.reshape([phalf,phalf])
-            
-
+    
     ymat=np.zeros((n,p))
     for i in range(n):
         ymat[i,:]=ydata[index[i%10][i],:,:].reshape([p])
@@ -157,7 +159,7 @@ def run_rkhm_cnn():
     isExist = os.path.exists(path)
     if not isExist:
         os.makedirs(path)
-    xtest=np.zeros((100,phalf,phalf,1))
+    xtest=np.zeros((100*p,p))
     for i in range(100):
         tmp=ydata[index[i%10][i+n],:,:]
         Image.fromarray((255*tmp).astype(np.int8), 'L').save(path+'/original'+str(i)+'.png')
@@ -165,15 +167,50 @@ def run_rkhm_cnn():
             for l in range(phalf):
                 if True: 
                     tmp[k,l]=tmp[k,l]+0.01*nr.randn()
-        xtest[i,:,:,:]=tmp.reshape([phalf,phalf,1])
+        xtest[i*p:(i+1)*p,:]=salg.circulant(tmp.reshape(p))
         Image.fromarray((255*tmp).astype(np.int8), 'L').save(path+'/noisy'+str(i)+'.png')
 
     xmat=tf.constant(xmat,dtype=tf.float32)
     xtest=tf.constant(xtest,dtype=tf.float32)
     ymat=tf.constant(ymat,dtype=tf.float32)
-    
+
+    for i in range(100):
+        tmp=tf.matmul(xtest[i*p:(i+1)*p,:],aa[0])+aa[1]
+        q,r=tf.linalg.qr(tmp)
+
+        if i==0:
+            tmpp=tf.matmul(aa[2],tf.transpose(r,(1,0)))
+            tmp=tf.matmul(tmpp,tf.eye(p)-b*tf.transpose(q,(1,0)))+aa[3]
+            #tmp1=tf.matmul(tmpp,tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.eye(p)-b*tf.transpose(q,(1,0))))))))
+            tmp1=tf.matmul(tmpp,tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.eye(p)-b*tf.transpose(q,(1,0)))))
+            xtest1=tf.concat([tmp,tmp1],axis=1)
+
+        else:
+            tmpp=tf.matmul(aa[2],tf.transpose(r,(1,0)))
+            tmp=tf.matmul(tmpp,tf.eye(p)-b*tf.transpose(q,(1,0)))+aa[3]
+            #tmp1=tf.matmul(tmpp,tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.eye(p)-b*tf.transpose(q,(1,0))))))))
+            tmp1=tf.matmul(tmpp,tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.matmul(tf.eye(p)-b*tf.transpose(q,(1,0)),tf.eye(p)-b*tf.transpose(q,(1,0)))))
+            xtest1=tf.concat([xtest1,tf.concat([tmp,tmp1],axis=1)],axis=0)
+
+    y=xtest1.numpy().dot(xmat1.T.conjugate().dot(c))
+    xtest=np.zeros((100,phalf,phalf,1))
+    onevec=np.zeros((2,p))
+    for i in range(100):
+      result=np.zeros(p)
+      for j in range(round(p)):
+        index1=np.concatenate([np.arange(j,p,1),np.arange(0,j,1)],axis=0)
+        result=result+y[i*p+j,index1]
+                
+      onevec[0,:]=result/p
+      ind=np.where(np.argmax(onevec,axis=0)==1)
+      result[ind[0]]=np.zeros(len(ind[0]))
+      result=result/np.max(result)
+      xtest[i,:,:,0]=result.reshape([phalf,phalf])
+
+    xtest=tf.constant(xtest,dtype=tf.float32)
+
     cnn = CNN(phalf)
-    opt = tf.keras.optimizers.Adam(1e-3)
+    opt = tf.keras.optimizers.Adam(10*1e-3)
     cnn.model(tf.zeros((1,phalf,phalf,1), dtype=tf.float32))
     
     path = "results"
@@ -184,7 +221,7 @@ def run_rkhm_cnn():
     for epoch in range(1, epochs + 1):
         loss= train(cnn, xmat, opt, ymat)
         
-        if epoch%100==0:
+        if epoch%10==0:
           result=cnn.call(xtest).numpy()
           onevec=np.zeros((2,p))
           err=0
@@ -197,9 +234,11 @@ def run_rkhm_cnn():
             result1=result1/np.max(result1)
             err=err+alg.norm(result1-ydata[index[i%10][i+n],:,:].reshape([p]))
             yy=ydata[index[i%10][i+n],:,:].reshape([p])
-            Image.fromarray((255*(result1.reshape([phalf,phalf]))).astype(np.int8), 'L').save(path+'/result'+str(epoch)+'_'+str(i)+'.png')
+            if epoch==500:
+              Image.fromarray((255*(result1.reshape([phalf,phalf]))).astype(np.int8), 'L').save(path+'/result'+str(epoch)+'_'+str(i)+'.png')
             
           print(epoch,"Mean test error:",err/100,flush=True)
+          #print(epoch,err/100,flush=True)
 
 if __name__ == '__main__':
     run_rkhm_cnn()
